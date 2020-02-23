@@ -169,7 +169,7 @@ int main(int argc, char **argv)
                     r = g = b = pow(fabs(z/12.6),.4) * 255;
                 } else if (outmode == PSI) {
                     float p = (i < imax && j < jmax)?psi[i][j]:0.0;
-                    r = g = b = (p+3.0)/7.5 * 255; 
+                    r = g = b = (p+3.0)/7.5 * 255;
                 }
             }
             fprintf(fout, "%c%c%c", r, g, b);
