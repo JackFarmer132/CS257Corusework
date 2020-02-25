@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include "constants.h"
+#include <omp.h>
+#define NUM_THREADS 4
 
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
@@ -30,7 +32,7 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
                     /(4.0*dely);
                 laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
                     (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
-   
+
                 f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
             } else {
                 f[i][j] = u[i][j];
@@ -103,7 +105,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     int i, j, iter;
     float add, beta_2, beta_mod;
     float p0 = 0.0;
-    
+
     int rb; /* Red-black value. */
 
     float rdx2 = 1.0/(delx*delx);
@@ -116,25 +118,25 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
             if (flag[i][j] & C_F) { p0 += p[i][j]*p[i][j]; }
         }
     }
-   
+
     p0 = sqrt(p0/ifull);
     if (p0 < 0.0001) { p0 = 1.0; }
-    
-    /* Red/Black SOR-iteration */
 
+    /* Red/Black SOR-iteration */
     for (iter = 0; iter < itermax; iter++) {
         for (rb = 0; rb <= 1; rb++) {
+            #pragma omp parallel for private(j)
             for (i = 1; i <= imax; i++) {
                 for (j = 1; j <= jmax; j++) {
                     if ((i+j) % 2 != rb) { continue; }
                     if (flag[i][j] == (C_F | B_NSEW)) {
-                        p[i][j] = (1.-omega)*p[i][j] - 
+                        p[i][j] = (1.-omega)*p[i][j] -
                               beta_2*(
                                     (p[i+1][j]+p[i-1][j])*rdx2
                                   + (p[i][j+1]+p[i][j-1])*rdy2
                                   -  rhs[i][j]
                               );
-                    } else if (flag[i][j] & C_F) { 
+                    } else if (flag[i][j] & C_F) {
                         /* modified star near boundary */
                         beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
                         p[i][j] = (1.-omega)*p[i][j] -
@@ -146,7 +148,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                     }
                 } /* end of j */
             } /* end of i */
-
+          /* end of parallel section */
         } /* end of rb */
         /* Partial computation of residual */
         *res = 0.0;
@@ -154,7 +156,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
             for (j = 1; j <= jmax; j++) {
                 if (flag[i][j] & C_F) {
                     /* only fluid cells */
-                    add = (eps_E*(p[i+1][j]-p[i][j]) - 
+                    add = (eps_E*(p[i+1][j]-p[i][j]) -
                         eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
                         (eps_N*(p[i][j+1]-p[i][j]) -
                         eps_S*(p[i][j]-p[i][j-1])) * rdy2  -  rhs[i][j];
@@ -207,12 +209,12 @@ void setTimestepInterval(float *del_t, int imax, int jmax, float delx,
     float dely, float **u, float **v, float Re, float tau)
 {
     int i, j;
-    float umax, vmax, deltu, deltv, deltRe; 
+    float umax, vmax, deltu, deltv, deltRe;
 
     /* del_t satisfying CFL conditions */
     if (tau >= 1.0e-10) { /* else no time stepsize control */
         umax = 1.0e-10;
-        vmax = 1.0e-10; 
+        vmax = 1.0e-10;
         for (i=0; i<=imax+1; i++) {
             for (j=1; j<=jmax+1; j++) {
                 umax = max(fabs(u[i][j]), umax);
@@ -225,7 +227,7 @@ void setTimestepInterval(float *del_t, int imax, int jmax, float delx,
         }
 
         deltu = delx/umax;
-        deltv = dely/vmax; 
+        deltv = dely/vmax;
         deltRe = 1/(1/(delx*delx)+1/(dely*dely))*Re/2.0;
 
         if (deltu<deltv) {
@@ -270,12 +272,12 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
         for (j=1; j<=jmax; j++) {
             if (flag[i][j] & B_NSEW) {
                 switch (flag[i][j]) {
-                    case B_N: 
+                    case B_N:
                         v[i][j]   = 0.0;
                         u[i][j]   = -u[i][j+1];
                         u[i-1][j] = -u[i-1][j+1];
                         break;
-                    case B_E: 
+                    case B_E:
                         u[i][j]   = 0.0;
                         v[i][j]   = -v[i+1][j];
                         v[i][j-1] = -v[i+1][j-1];
@@ -285,7 +287,7 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
                         u[i][j]   = -u[i][j-1];
                         u[i-1][j] = -u[i-1][j-1];
                         break;
-                    case B_W: 
+                    case B_W:
                         u[i-1][j] = 0.0;
                         v[i][j]   = -v[i-1][j];
                         v[i][j-1] = -v[i-1][j-1];
@@ -328,4 +330,3 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
         v[0][j] = 2*vi-v[1][j];
     }
 }
-

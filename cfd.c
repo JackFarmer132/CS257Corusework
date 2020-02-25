@@ -14,7 +14,7 @@ void write_bin(float **u, float **v, float **p, char **flag,
 
 int read_bin(float **u, float **v, float **p, char **flag,
     int imax, int jmax, float xlength, float ylength, char *file);
-    
+
 int compareOutput();
 long computeFlops(long imax, long jmax, long iterations);
 double wtime();
@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
     char  **flag;
     int init_case, iters = 0;
 
-    infile = strdup("initial.bin");    
+    infile = strdup("initial.bin");
     outfile = strdup("output.bin");
 
     delx = xlength/imax;
@@ -64,8 +64,8 @@ int main(int argc, char *argv[])
     f    = allocFloatMatrix(imax+2, jmax+2);
     g    = allocFloatMatrix(imax+2, jmax+2);
     p    = allocFloatMatrix(imax+2, jmax+2);
-    rhs  = allocFloatMatrix(imax+2, jmax+2); 
-    flag = allocCharMatrix(imax+2, jmax+2);                    
+    rhs  = allocFloatMatrix(imax+2, jmax+2);
+    flag = allocCharMatrix(imax+2, jmax+2);
 
     if (!u || !v || !f || !g || !p || !rhs || !flag) {
         fprintf(stderr, "Couldn't allocate memory for matrices.\n");
@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
 
     /* Read in initial values from initial.bin */
     init_case = read_bin(u, v, p, flag, imax, jmax, xlength, ylength, infile);
-        
+
     if (init_case > 0) {
         /* Error while reading file */
         return 1;
@@ -108,9 +108,9 @@ int main(int argc, char *argv[])
         applyBoundaryConditions(u, v, flag, imax, jmax, ui, vi);
     } /* End of main loop */
     double computeEnd = wtime();
-    
+
     write_bin(u, v, p, flag, imax, jmax, xlength, ylength, outfile);
-    
+
     freeMatrix(u);
     freeMatrix(v);
     freeMatrix(f);
@@ -118,25 +118,25 @@ int main(int argc, char *argv[])
     freeMatrix(p);
     freeMatrix(rhs);
     freeMatrix(flag);
-    
+
     double computeTime = computeEnd - computeStart;
-    
+
     //Print out performance metrics
     printf("==== Performance Metrics ====\n");
     printf("\tRuntime: %f seconds\n",computeTime);
-    
+
     long flops = computeFlops(imax, jmax, iters);
     printf("\tGFLOP/s: \t%f\n", (float)flops/ 1000000000.0f / computeTime);
-    
-    
+
+
     //Compare the results
     int check = compareOutput(outfile, "target.bin");
-    
+
     printf("==== Validating Program Output ====\n");
     if(check == 0) {
         printf("\tProgram output is validated.\n");
     } else {
-        printf("\tProgram output is incorrect.\n");    
+        printf("\tProgram output is incorrect.\n");
     }
     return 0;
 }
@@ -148,7 +148,7 @@ void write_bin(float **u, float **v, float **p, char **flag,
     int i;
     FILE *fp;
 
-    fp = fopen(file, "wb"); 
+    fp = fopen(file, "wb");
 
     if (fp == NULL) {
         fprintf(stderr, "Could not open file '%s': %s\n", file,
@@ -216,7 +216,7 @@ int read_bin(float **u, float **v, float **p, char **flag,
     return 0;
 }
 
-int compareOutput(char *student, char *target) 
+int compareOutput(char *student, char *target)
 {
     FILE *f1, *f2;
     int imax, jmax, i, j;
@@ -295,12 +295,12 @@ int compareOutput(char *student, char *target)
                 diff_found = 1;
                 break;
             }
-            
+
             if (fabs(du) > epsilon || fabs(dv) > epsilon ||
                 fabs(dp) > epsilon || fabs(dflags) > epsilon) {
-                diff_found = 1; 
+                diff_found = 1;
                 break;
-            }   
+            }
         }
     }
     if (diff_found) {
@@ -312,16 +312,16 @@ int compareOutput(char *student, char *target)
 }
 
 long computeFlops(long imax, long jmax, long iterations) {
-    
+
     long ctv = (78357*54) + (77816*54);
     long crhs = 78506*6;
     long uv = 78357*4 + 77816*4;
     long sti = 11;
     long abc = 406;
     long ps = 8+imax*jmax*2+2+(imax*jmax*20)+imax*jmax*16*100;
-    
+
     return iterations * (ctv + crhs + uv +sti + abc + ps);
-    
+
 }
 
 double wtime() {
