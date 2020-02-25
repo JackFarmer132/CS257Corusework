@@ -3,7 +3,7 @@
 #include <math.h>
 #include "constants.h"
 #include <omp.h>
-#define NUM_THREADS 4
+#define NUM_THREADS 8
 
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
@@ -152,6 +152,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
         } /* end of rb */
         /* Partial computation of residual */
         *res = 0.0;
+        #pragma omp parallel for private(j)
         for (i = 1; i <= imax; i++) {
             for (j = 1; j <= jmax; j++) {
                 if (flag[i][j] & C_F) {
