@@ -113,6 +113,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     beta_2 = -omega/(2.0*(rdx2+rdy2));
 
     /* Calculate sum of squares */
+    #pragma omp parallel for private(j) reduction (+:p0)
     for (i = 1; i <= imax; i++) {
         for (j=1; j<=jmax; j++) {
             if (flag[i][j] & C_F) { p0 += p[i][j]*p[i][j]; }
@@ -152,7 +153,9 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
         } /* end of rb */
         /* Partial computation of residual */
         *res = 0.0;
-        #pragma omp parallel for private(j)
+        //create temporary non-address based var to hold residual
+        float temp_res = 0.0;
+        #pragma omp parallel for private(j) reduction(+:temp_res)
         for (i = 1; i <= imax; i++) {
             for (j = 1; j <= jmax; j++) {
                 if (flag[i][j] & C_F) {
@@ -161,11 +164,11 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                         eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
                         (eps_N*(p[i][j+1]-p[i][j]) -
                         eps_S*(p[i][j]-p[i][j-1])) * rdy2  -  rhs[i][j];
-                    *res += add*add;
+                    temp_res += add*add;
                 }
             }
         }
-        *res = sqrt((*res)/ifull)/p0;
+        *res = sqrt((temp_res)/ifull)/p0;
 
         /* convergence? */
         if (*res<eps) break;
