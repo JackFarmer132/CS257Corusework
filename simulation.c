@@ -8,59 +8,108 @@
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
 
+
+/* Set the timestep size so that we satisfy the Courant-Friedrichs-Lewy
+ * conditions (ie no particle moves more than one cell width in one
+ * timestep). Otherwise the simulation becomes unstable.
+ */
+void setTimestepInterval(float *del_t, int imax, int jmax, float delx,
+    float dely, float **u, float **v, float Re, float tau)
+{
+    int i, j;
+    float umax, vmax, deltu, deltv, deltRe;
+
+    /* del_t satisfying CFL conditions */
+    if (tau >= 1.0e-10) { /* else no time stepsize control */
+        umax = 1.0e-10;
+        vmax = 1.0e-10;
+        for (i=0; i<=imax+1; i++) {
+            for (j=1; j<=jmax+1; j++) {
+                umax = max(fabs(u[i][j]), umax);
+            }
+        }
+        for (i=1; i<=imax+1; i++) {
+            for (j=0; j<=jmax+1; j++) {
+                vmax = max(fabs(v[i][j]), vmax);
+            }
+        }
+
+        deltu = delx/umax;
+        deltv = dely/vmax;
+        deltRe = 1/(1/(delx*delx)+1/(dely*dely))*Re/2.0;
+
+        if (deltu<deltv) {
+            *del_t = min(deltu, deltRe);
+        } else {
+            *del_t = min(deltv, deltRe);
+        }
+        *del_t = tau * (*del_t); /* multiply by safety factor */
+    }
+}
+
+
 /* Computation of tentative velocity field (f, g) */
 void computeTentativeVelocity(float **u, float **v, float **f, float **g,
     char **flag, int imax, int jmax, float del_t, float delx, float dely,
     float gamma, float Re)
 {
     int  i, j;
-    float du2dx, duvdy, duvdx, dv2dy, laplu, laplv;
+    float du2dx = 0.0;
+    float duvdx = 0.0;
+    float laplu = 0.0;
+    float dv2dy = 0.0;
+    float duvdy = 0.0;
+    float laplv = 0.0;
 
-    for (i=1; i<=imax-1; i++) {
-        for (j=1; j<=jmax; j++) {
-            /* only if both adjacent cells are fluid cells */
-            if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
-                du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
-                    (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
-                    /(4.0*delx);
-                duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
-                    (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
-                    /(4.0*dely);
-                laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
-                    (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
-
-                f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
-            } else {
-                f[i][j] = u[i][j];
-            }
-        }
-    }
-
+    #pragma omp parallel for private(j) reduction(+:duvdx, dv2dy, laplv)
     for (i=1; i<=imax; i++) {
-        for (j=1; j<=jmax-1; j++) {
-            /* only if both adjacent cells are fluid cells */
-            if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
-                duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
-                    (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
-                    /(4.0*delx);
-                dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
-                    (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
-                    /(4.0*dely);
+        for (j=1; j<=jmax; j++) {
+            /* loops combined, so can't allow certain parses */
+            if (i != imax) {
+                /* only if both adjacent cells are fluid cells */
+                if (i != imax)
+                if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
+                    du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
+                        gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
+                        (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
+                        gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
+                        /(4.0*delx);
+                    duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
+                        gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
+                        (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
+                        gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
+                        /(4.0*dely);
+                    laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
+                        (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
 
-                laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
-                    (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
+                    f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
+                } else {
+                    f[i][j] = u[i][j];
+                }
+            }
 
-                g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
-            } else {
-                g[i][j] = v[i][j];
+            /* loops combined, so can't allow certain parses */
+            if (j != jmax) {
+                /* only if both adjacent cells are fluid cells */
+                if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
+                    duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
+                        gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
+                        (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
+                        gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
+                        /(4.0*delx);
+                    dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
+                        gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
+                        (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
+                        gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
+                        /(4.0*dely);
+
+                    laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
+                        (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
+
+                    g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
+                } else {
+                    g[i][j] = v[i][j];
+                }
             }
         }
     }
@@ -151,8 +200,6 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
             } /* end of i */
           /* end of parallel section */
         } /* end of rb */
-        /* Partial computation of residual */
-        *res = 0.0;
         //create temporary non-address based var to hold residual
         float temp_res = 0.0;
         #pragma omp parallel for private(j) reduction(+:temp_res)
@@ -201,45 +248,6 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
                 v[i][j] = g[i][j]-(p[i][j+1]-p[i][j])*del_t/dely;
             }
         }
-    }
-}
-
-
-/* Set the timestep size so that we satisfy the Courant-Friedrichs-Lewy
- * conditions (ie no particle moves more than one cell width in one
- * timestep). Otherwise the simulation becomes unstable.
- */
-void setTimestepInterval(float *del_t, int imax, int jmax, float delx,
-    float dely, float **u, float **v, float Re, float tau)
-{
-    int i, j;
-    float umax, vmax, deltu, deltv, deltRe;
-
-    /* del_t satisfying CFL conditions */
-    if (tau >= 1.0e-10) { /* else no time stepsize control */
-        umax = 1.0e-10;
-        vmax = 1.0e-10;
-        for (i=0; i<=imax+1; i++) {
-            for (j=1; j<=jmax+1; j++) {
-                umax = max(fabs(u[i][j]), umax);
-            }
-        }
-        for (i=1; i<=imax+1; i++) {
-            for (j=0; j<=jmax+1; j++) {
-                vmax = max(fabs(v[i][j]), vmax);
-            }
-        }
-
-        deltu = delx/umax;
-        deltv = dely/vmax;
-        deltRe = 1/(1/(delx*delx)+1/(dely*dely))*Re/2.0;
-
-        if (deltu<deltv) {
-            *del_t = min(deltu, deltRe);
-        } else {
-            *del_t = min(deltv, deltRe);
-        }
-        *del_t = tau * (*del_t); /* multiply by safety factor */
     }
 }
 
