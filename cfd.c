@@ -106,6 +106,8 @@ int main(int argc, char *argv[])
         updateVelocity(u, v, f, g, p, flag, imax, jmax, del_t, delx, dely);
 
         applyBoundaryConditions(u, v, flag, imax, jmax, ui, vi);
+        //moved from the loop statement to here
+        t += del_t
     } /* End of main loop */
     double computeEnd = wtime();
 
