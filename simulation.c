@@ -3,7 +3,7 @@
 #include <math.h>
 #include "constants.h"
 #include <omp.h>
-#define NUM_THREADS 8
+#define NUM_THREADS 4
 
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
@@ -62,66 +62,51 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
     float laplv = 0.0;
 
     #pragma omp parallel for private(j) reduction(+:duvdx, dv2dy, laplv)
-    for (i=1; i<=imax; i++) {
-        for (j=1; j<=jmax; j++) {
-            /* loops combined, so can't allow certain parses */
-            if (i != imax) {
-                /* only if both adjacent cells are fluid cells */
-                if (i != imax)
-                if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
-                    du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
-                        gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
-                        (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
-                        gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
-                        /(4.0*delx);
-                    duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
-                        gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
-                        (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
-                        gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
-                        /(4.0*dely);
-                    laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
-                        (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
+    for (i=0; i<=imax; i++) {
+        for (j=0; j<=jmax; j++) {
+            /* only if both adjacent cells are fluid cells */
+            if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
+                du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
+                    gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
+                    (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
+                    gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
+                    /(4.0*delx);
+                duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
+                    gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
+                    (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
+                    gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
+                    /(4.0*dely);
+                laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
+                    (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
 
-                    f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
-                } else {
-                    f[i][j] = u[i][j];
-                }
+                f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
+            /* catches and sets all other types of cell */
+            } else {
+                f[i][j] = u[i][j];
             }
 
-            /* loops combined, so can't allow certain parses */
-            if (j != jmax) {
-                /* only if both adjacent cells are fluid cells */
-                if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
-                    duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
-                        gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
-                        (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
-                        gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
-                        /(4.0*delx);
-                    dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
-                        gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
-                        (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
-                        gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
-                        /(4.0*dely);
+            /* only if both adjacent cells are fluid cells */
+            if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
+                duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
+                    gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
+                    (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
+                    gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
+                    /(4.0*delx);
+                dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
+                    gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
+                    (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
+                    gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
+                    /(4.0*dely);
 
-                    laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
-                        (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
+                laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
+                    (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
 
-                    g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
-                } else {
-                    g[i][j] = v[i][j];
-                }
+                g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
+            /* catches and sets all other types of cell */
+            } else {
+                g[i][j] = v[i][j];
             }
         }
-    }
-
-    /* f & g at external boundaries */
-    for (j=1; j<=jmax; j++) {
-        f[0][j]    = u[0][j];
-        f[imax][j] = u[imax][j];
-    }
-    for (i=1; i<=imax; i++) {
-        g[i][0]    = v[i][0];
-        g[i][jmax] = v[i][jmax];
     }
 }
 
