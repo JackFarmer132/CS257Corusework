@@ -3,7 +3,6 @@
 #include <math.h>
 #include "constants.h"
 #include <omp.h>
-#define NUM_THREADS 4
 
 #define max(x,y) ((x)>(y)?(x):(y))
 #define min(x,y) ((x)<(y)?(x):(y))
@@ -218,18 +217,14 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
 {
     int i, j;
 
-    for (i=1; i<=imax-1; i++) {
+    for (i=1; i<=imax; i++) {
         for (j=1; j<=jmax; j++) {
             /* only if both adjacent cells are fluid cells */
-            if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
+            if ((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
                 u[i][j] = f[i][j]-(p[i+1][j]-p[i][j])*del_t/delx;
             }
-        }
-    }
-    for (i=1; i<=imax; i++) {
-        for (j=1; j<=jmax-1; j++) {
             /* only if both adjacent cells are fluid cells */
-            if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
+            if ((j != jmax) && (flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
                 v[i][j] = g[i][j]-(p[i][j+1]-p[i][j])*del_t/dely;
             }
         }

@@ -22,6 +22,9 @@ double wtime();
 
 int main(int argc, char *argv[])
 {
+
+    // omp_set_num_threads(4);
+
     int verbose = 1;          /* Verbosity level */
     float xlength = 22.0;     /* Width of simulated domain */
     float ylength = 4.1;      /* Height of simulated domain */
