@@ -111,25 +111,6 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
 }
 
 
-// /* Calculate the right hand side of the pressure equation */
-// void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
-//     int jmax, float del_t, float delx, float dely)
-// {
-//     int i, j;
-//
-    // for (i=1;i<=imax;i++) {
-    //     for (j=1;j<=jmax;j++) {
-    //         if (flag[i][j] & C_F) {
-    //             /* only for fluid and non-surface cells */
-    //             rhs[i][j] = (
-    //                          (f[i][j]-f[i-1][j])/delx +
-    //                          (g[i][j]-g[i][j-1])/dely
-    //                         ) / del_t;
-    //         }
-    //     }
-    // }
-// }
-
 
 /* Red/Black SOR to solve the poisson equation */
 int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int imax, int jmax,

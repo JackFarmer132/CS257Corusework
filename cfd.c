@@ -89,8 +89,6 @@ int main(int argc, char *argv[])
         computeTentativeVelocity(u, v, f, g, flag, imax, jmax,
             del_t, delx, dely, gamma, Re);
 
-        // computeRhs(f, g, rhs, flag, imax, jmax, del_t, delx, dely);
-
         if (ifluid > 0) {
             itersor = poissonSolver(f, g, p, rhs, flag, imax, jmax, delx, dely,
                         del_t, eps, itermax, omega, &res, ifluid);

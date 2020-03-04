@@ -2,9 +2,6 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
     char **flag, int imax, int jmax, float del_t, float delx, float dely,
     float gamma, float Re);
 
-// void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
-//     int jmax, float del_t, float delx, float dely);
-
 int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int imax, int jmax,
     float delx, float dely, float del_t, float eps, int itermax, float omega,
     float *res, int ifull);
