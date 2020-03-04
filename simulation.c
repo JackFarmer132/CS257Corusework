@@ -146,11 +146,14 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
                 for (j = 1; j <= jmax; j++) {
                     if ((i+j) % 2 != rb) { continue; }
                     if (flag[i][j] & C_F) {
-                      /* moved in from computeRhs */
-                      rhs[i][j] = (
-                                   (f[i][j]-f[i-1][j])/delx +
-                                   (g[i][j]-g[i][j-1])/dely
-                                  ) / del_t;
+                      /* only compute if first iteration */
+                      if (iter == 0){
+                          /* moved in from computeRhs */
+                          rhs[i][j] = (
+                                       (f[i][j]-f[i-1][j])/delx +
+                                       (g[i][j]-g[i][j-1])/dely
+                                      ) / del_t;
+                        }
                         /* modified star near boundary */
                         beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
                         p[i][j] = (1.-omega)*p[i][j] -
@@ -197,7 +200,7 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
     char **flag, int imax, int jmax, float del_t, float delx, float dely)
 {
     int i, j;
-
+    #pragma omp parallel for simd
     for (i=1; i<=imax; i++) {
         for (j=1; j<=jmax; j++) {
             /* only if both adjacent cells are fluid cells */
@@ -246,47 +249,27 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
             if (flag[i][j] & B_NSEW) {
                 switch (flag[i][j]) {
                     case B_N:
-                        v[i][j]   = 0.0;
                         u[i][j]   = -u[i][j+1];
-                        u[i-1][j] = -u[i-1][j+1];
                         break;
                     case B_E:
-                        u[i][j]   = 0.0;
                         v[i][j]   = -v[i+1][j];
-                        v[i][j-1] = -v[i+1][j-1];
                         break;
                     case B_S:
-                        v[i][j-1] = 0.0;
                         u[i][j]   = -u[i][j-1];
-                        u[i-1][j] = -u[i-1][j-1];
                         break;
                     case B_W:
-                        u[i-1][j] = 0.0;
                         v[i][j]   = -v[i-1][j];
-                        v[i][j-1] = -v[i-1][j-1];
                         break;
                     case B_NE:
-                        v[i][j]   = 0.0;
-                        u[i][j]   = 0.0;
-                        v[i][j-1] = -v[i+1][j-1];
-                        u[i-1][j] = -u[i-1][j+1];
                         break;
                     case B_SE:
-                        v[i][j-1] = 0.0;
-                        u[i][j]   = 0.0;
                         v[i][j]   = -v[i+1][j];
-                        u[i-1][j] = -u[i-1][j-1];
                         break;
                     case B_SW:
-                        v[i][j-1] = 0.0;
-                        u[i-1][j] = 0.0;
                         v[i][j]   = -v[i-1][j];
                         u[i][j]   = -u[i][j-1];
                         break;
                     case B_NW:
-                        v[i][j]   = 0.0;
-                        u[i-1][j] = 0.0;
-                        v[i][j-1] = -v[i-1][j-1];
                         u[i][j]   = -u[i][j+1];
                         break;
                 }
