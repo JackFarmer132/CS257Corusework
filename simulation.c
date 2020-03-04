@@ -136,14 +136,13 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     float *res, int ifull)
 {
     int i, j, iter;
-    float add, beta_2, beta_mod;
+    float add,  beta_mod;
     float p0 = 0.0;
 
     int rb; /* Red-black value. */
 
     float rdx2 = 1.0/(delx*delx);
     float rdy2 = 1.0/(dely*dely);
-    beta_2 = -omega/(2.0*(rdx2+rdy2));
 
     /* Calculate sum of squares */
     #pragma omp parallel for private(j) reduction (+:p0)
@@ -163,14 +162,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
             for (i = 1; i <= imax; i++) {
                 for (j = 1; j <= jmax; j++) {
                     if ((i+j) % 2 != rb) { continue; }
-                    if (flag[i][j] == (C_F | B_NSEW)) {
-                        p[i][j] = (1.-omega)*p[i][j] -
-                              beta_2*(
-                                    (p[i+1][j]+p[i-1][j])*rdx2
-                                  + (p[i][j+1]+p[i][j-1])*rdy2
-                                  -  rhs[i][j]
-                              );
-                    } else if (flag[i][j] & C_F) {
+                    if (flag[i][j] & C_F) {
                         /* modified star near boundary */
                         beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
                         p[i][j] = (1.-omega)*p[i][j] -
