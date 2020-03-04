@@ -22,9 +22,6 @@ double wtime();
 
 int main(int argc, char *argv[])
 {
-
-    // omp_set_num_threads(4);
-
     int verbose = 1;          /* Verbosity level */
     float xlength = 22.0;     /* Width of simulated domain */
     float ylength = 4.1;      /* Height of simulated domain */
@@ -92,11 +89,11 @@ int main(int argc, char *argv[])
         computeTentativeVelocity(u, v, f, g, flag, imax, jmax,
             del_t, delx, dely, gamma, Re);
 
-        computeRhs(f, g, rhs, flag, imax, jmax, del_t, delx, dely);
+        // computeRhs(f, g, rhs, flag, imax, jmax, del_t, delx, dely);
 
         if (ifluid > 0) {
-            itersor = poissonSolver(p, rhs, flag, imax, jmax, delx, dely,
-                        eps, itermax, omega, &res, ifluid);
+            itersor = poissonSolver(f, g, p, rhs, flag, imax, jmax, delx, dely,
+                        del_t, eps, itermax, omega, &res, ifluid);
         } else {
             itersor = 0;
         }
