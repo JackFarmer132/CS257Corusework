@@ -108,6 +108,9 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
     __m128 vec_du2dx;
     __m128 vec_duvdy;
     __m128 vec_laplu;
+    __m128 vec_duvdx;
+    __m128 vec_dv2dy;
+    __m128 vec_laplv;
 
     //gamma
     __m128 vec_gamma = _mm_set1_ps(gamma);
@@ -121,129 +124,111 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
     __m128 vec_Re = _mm_set1_ps(Re);
     // #pragma omp parallel for private(j) reduction(+:duvdx, dv2dy, laplv)
     for (i=1; i<=imax; i++) {
-        for (j=1; j<=jmax; j++) {
+        for (j=1; j+4<=jmax-1; j=j+4) {
             /* only if both adjacent cells are fluid cells */
             if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
-
-              //loads u[i][j], u[i][j+1], u[i][j+2], u[i][j+3]
-              au = _mm_loadu_ps(u[i] + j);
-              //loads u[i+1][j], u[i+1][j+1], u[i+1][j+2], u[i+1][j+3]
-              bu = _mm_loadu_ps(u[i+1] + j);
-              //loads u[i-1][j], u[i-1][j+1], u[i-1][j+2], u[i-1][j+3]
-              cu = _mm_loadu_ps(u[i-1] + j);
-              //loads u[i][j+1], u[i][j+2], u[i][j+3], u[i][j+4]
-              du = _mm_loadu_ps(u[i] + 1 + j);
-              //loads u[i][j-1], u[i][j], u[i][j+1], u[i][j+2]
-              eu = _mm_loadu_ps(u[i] - 1 + j);
-              //loads u[i-1][j+1], u[i-1][j+2], u[i-1][j+3], u[i-1][j+4]
-              fu = _mm_loadu_ps(u[i-1] + 1 + j);
-              //loads v[i][j], v[i][j+1], v[i][j+2], v[i][j+3]
-              av = _mm_loadu_ps(v[i] + j);
-              //loads v[i+1][j], v[i+1][j+1], v[i+1][j+2], v[i+1][j+3]
-              bv = _mm_loadu_ps(v[i+1] + j);
-              //loads v[i][j-1], v[i][j], v[i][j+1], v[i][j+2]
-              cv = _mm_loadu_ps(v[i] - 1 + j);
-              //loads v[i+1][j-1], v[i+1][j], v[i+1][j+1], v[i+1][j+2]
-              dv = _mm_loadu_ps(v[i+1] - 1 + j);
-              //loads v[i-1][j], v[i-1][j+1], v[i-1][j+2], v[i-1][j+3]
-              ev = _mm_loadu_ps(v[i-1] + j);
-              //loads v[i][j+1], v[i][j+2], v[i][j+3], v[i][j+4]
-              fv = _mm_loadu_ps(v[i] + 1 + j);
-              //loads f
-              vec_f = _mm_loadu_ps(f[i] + j);
-
-              // (u[i][j]+u[i+1][j])
-              one = _mm_add_ps(au, bu);
-              // fabs((u[i][j]+u[i+1][j]))
-              fabs_one = _mm_sqrt_ps(_mm_mul_ps(one, one));
-              // (u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])
-              two = _mm_mul_ps(one, one);
-              // (u[i][j]-u[i+1][j])
-              three = _mm_sub_ps(au, bu);
-              // gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])
-              four = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_one), three);
-              // (u[i-1][j]+u[i][j])
-              five = _mm_add_ps(cu, au);
-              // fabs(u[i][j]+u[i+1][j])
-              fabs_five = _mm_sqrt_ps(_mm_mul_ps(five, five));
-              // (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])
-              six = _mm_mul_ps(five, five);
-              // (u[i-1][j]-u[i][j])
-              seven = _mm_sub_ps(cu, au);
-              // gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j])
-              eight = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_five), seven);
-              // eq. before division
-              nine = _mm_sub_ps(_mm_add_ps(two, four), _mm_add_ps(six, eight));
-              // (4.0*delx)
-              ten = _mm_mul_ps(_mm_set1_ps(4.0), vec_delx);
-              // du2dx
-              vec_du2dx = _mm_div_ps(nine, ten);
-
-              // (v[i][j]+v[i+1][j])
-              one = _mm_add_ps(av, bv);
-              // fabs(v[i][j]+v[i+1][j])
-              fabs_one = _mm_sqrt_ps(_mm_mul_ps(one, one));
-              // (u[i][j]+u[i][j+1])
-              two = _mm_add_ps(au, du);
-              // (v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])
-              three = _mm_mul_ps(one, two);
-              // (u[i][j]-u[i][j+1])
-              four = _mm_sub_ps(au, du);
-              // gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])
-              five = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_one), four);
-              // (v[i][j-1]+v[i+1][j-1])
-              six = _mm_add_ps(cv, dv);
-              // fabs(v[i][j-1]+v[i+1][j-1])
-              fabs_six = _mm_sqrt_ps(_mm_mul_ps(six, six));
-              // (u[i][j-1]+u[i][j])
-              seven = _mm_add_ps(au, eu);
-              // (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])
-              eight = _mm_mul_ps(six, seven);
-              // (u[i][j-1]-u[i][j])
-              nine = _mm_sub_ps(eu, au);
-              // gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j])
-              ten = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_six), nine);
-              // eq. before division
-              eleven = _mm_sub_ps(_mm_add_ps(three, five), _mm_add_ps(eight, ten));
-              // (4.0*dely)
-              twelve = _mm_mul_ps(_mm_set1_ps(4.0), vec_dely);
-              // duvdy
-              vec_duvdy = _mm_div_ps(eleven, twelve);
-
-              // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])
-              one = _mm_add_ps(cu, _mm_sub_ps(bu, _mm_mul_ps(_mm_set1_ps(2.0), au)));
-              // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx
-              two = _mm_div_ps(one, vec_delx);
-              // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx
-              three = _mm_div_ps(two, vec_delx);
-              // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])
-              four = _mm_add_ps(eu, _mm_sub_ps(du, _mm_mul_ps(_mm_set1_ps(2.0), au)));
-              // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely
-              five = _mm_div_ps(four, vec_dely);
-              // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely
-              six = _mm_div_ps(five, vec_dely);
-              // laplu
-              vec_laplu = _mm_add_ps(three, six);
+                //loads u[i][j], u[i][j+1], u[i][j+2], u[i][j+3]
+                au = _mm_loadu_ps(u[i] + j);
+                //loads u[i+1][j], u[i+1][j+1], u[i+1][j+2], u[i+1][j+3]
+                bu = _mm_loadu_ps(u[i+1] + j);
+                //loads u[i-1][j], u[i-1][j+1], u[i-1][j+2], u[i-1][j+3]
+                cu = _mm_loadu_ps(u[i-1] + j);
+                //loads u[i][j+1], u[i][j+2], u[i][j+3], u[i][j+4]
+                du = _mm_loadu_ps(u[i] + 1 + j);
+                //loads u[i][j-1], u[i][j], u[i][j+1], u[i][j+2]
+                eu = _mm_loadu_ps(u[i] - 1 + j);
+                //loads u[i-1][j+1], u[i-1][j+2], u[i-1][j+3], u[i-1][j+4]
+                fu = _mm_loadu_ps(u[i-1] + 1 + j);
+                //loads v[i][j], v[i][j+1], v[i][j+2], v[i][j+3]
+                av = _mm_loadu_ps(v[i] + j);
+                //loads v[i+1][j], v[i+1][j+1], v[i+1][j+2], v[i+1][j+3]
+                bv = _mm_loadu_ps(v[i+1] + j);
+                //loads v[i][j-1], v[i][j], v[i][j+1], v[i][j+2]
+                cv = _mm_loadu_ps(v[i] - 1 + j);
+                //loads v[i+1][j-1], v[i+1][j], v[i+1][j+1], v[i+1][j+2]
+                dv = _mm_loadu_ps(v[i+1] - 1 + j);
+                //loads v[i-1][j], v[i-1][j+1], v[i-1][j+2], v[i-1][j+3]
+                ev = _mm_loadu_ps(v[i-1] + j);
+                //loads v[i][j+1], v[i][j+2], v[i][j+3], v[i][j+4]
+                fv = _mm_loadu_ps(v[i] + 1 + j);
+                //loads f
+                vec_f = _mm_loadu_ps(f[i] + j);
 
 
+                // (u[i][j]+u[i+1][j])
+                one = _mm_add_ps(au, bu);
+                // fabs((u[i][j]+u[i+1][j]))
+                fabs_one = _mm_sqrt_ps(_mm_mul_ps(one, one));
+                // (u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])
+                two = _mm_mul_ps(one, one);
+                // (u[i][j]-u[i+1][j])
+                three = _mm_sub_ps(au, bu);
+                // gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])
+                four = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_one), three);
+                // (u[i-1][j]+u[i][j])
+                five = _mm_add_ps(cu, au);
+                // fabs(u[i][j]+u[i+1][j])
+                fabs_five = _mm_sqrt_ps(_mm_mul_ps(five, five));
+                // (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])
+                six = _mm_mul_ps(five, five);
+                // (u[i-1][j]-u[i][j])
+                seven = _mm_sub_ps(cu, au);
+                // gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j])
+                eight = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_five), seven);
+                // eq. before division
+                nine = _mm_sub_ps(_mm_add_ps(two, four), _mm_add_ps(six, eight));
+                // (4.0*delx)
+                ten = _mm_mul_ps(_mm_set1_ps(4.0), vec_delx);
+                // du2dx
+                vec_du2dx = _mm_div_ps(nine, ten);
 
 
+                // (v[i][j]+v[i+1][j])
+                one = _mm_add_ps(av, bv);
+                // fabs(v[i][j]+v[i+1][j])
+                fabs_one = _mm_sqrt_ps(_mm_mul_ps(one, one));
+                // (u[i][j]+u[i][j+1])
+                two = _mm_add_ps(au, du);
+                // (v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])
+                three = _mm_mul_ps(one, two);
+                // (u[i][j]-u[i][j+1])
+                four = _mm_sub_ps(au, du);
+                // gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])
+                five = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_one), four);
+                // (v[i][j-1]+v[i+1][j-1])
+                six = _mm_add_ps(cv, dv);
+                // fabs(v[i][j-1]+v[i+1][j-1])
+                fabs_six = _mm_sqrt_ps(_mm_mul_ps(six, six));
+                // (u[i][j-1]+u[i][j])
+                seven = _mm_add_ps(au, eu);
+                // (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])
+                eight = _mm_mul_ps(six, seven);
+                // (u[i][j-1]-u[i][j])
+                nine = _mm_sub_ps(eu, au);
+                // gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j])
+                ten = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_six), nine);
+                // eq. before division
+                eleven = _mm_sub_ps(_mm_add_ps(three, five), _mm_add_ps(eight, ten));
+                // (4.0*dely)
+                twelve = _mm_mul_ps(_mm_set1_ps(4.0), vec_dely);
+                // duvdy
+                vec_duvdy = _mm_div_ps(eleven, twelve);
 
-                du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
-                    (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
-                    /(4.0*delx);
-                duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
-                    (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
-                    /(4.0*dely);
-                laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
-                    (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
 
-                f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
-
+                // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])
+                one = _mm_add_ps(cu, _mm_sub_ps(bu, _mm_mul_ps(_mm_set1_ps(2.0), au)));
+                // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx
+                two = _mm_div_ps(one, vec_delx);
+                // (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx
+                three = _mm_div_ps(two, vec_delx);
+                // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])
+                four = _mm_add_ps(eu, _mm_sub_ps(du, _mm_mul_ps(_mm_set1_ps(2.0), au)));
+                // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely
+                five = _mm_div_ps(four, vec_dely);
+                // (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely
+                six = _mm_div_ps(five, vec_dely);
+                // laplu
+                vec_laplu = _mm_add_ps(three, six);
 
 
                 // laplu/Re
@@ -255,6 +240,8 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
                 // u[i][j]+del_t*(laplu/Re-du2dx-duvdy)
                 vec_f = _mm_add_ps(au, three);
 
+                /* store results back into array f */
+                _mm_storeu_ps(f[i] + j, vec_f);
 
             /* catches and sets all other types of cell */
             } else {
@@ -319,36 +306,110 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
                 eleven = _mm_sub_ps(_mm_add_ps(three, five), _mm_add_ps(eight, ten));
                 // (4.0*delx)
                 twelve = _mm_mul_ps(_mm_set1_ps(4.0), vec_delx);
-                // duvdy
-                __m128 vec_duvdy = _mm_div_ps(eleven, twelve);
-                _mm_store_ps(temp, vec_duvdy);
-
-                
+                // duvdx
+                vec_duvdx = _mm_div_ps(eleven, twelve);
 
 
+                // (v[i][j]+v[i][j+1])
+                one = _mm_add_ps(av, fv);
+                // fabs(v[i][j]+v[i][j+1])
+                fabs_one = _mm_sqrt_ps(_mm_mul_ps(one, one));
+                // (v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])
+                two = _mm_mul_ps(one, one);
+                // (v[i][j]-v[i][j+1])
+                three = _mm_sub_ps(av, fv);
+                // gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])
+                four = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_one), three);
+                // (v[i][j-1]+v[i][j])
+                five = _mm_add_ps(cv, av);
+                // fabs(v[i][j-1]+v[i][j])
+                fabs_five = _mm_sqrt_ps(_mm_mul_ps(five, five));
+                // (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])
+                six = _mm_mul_ps(five, five);
+                // (v[i][j-1]-v[i][j])
+                seven = _mm_sub_ps(cv, av);
+                // gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j])
+                eight = _mm_mul_ps(_mm_mul_ps(vec_gamma, fabs_five), seven);
+                // eq. before division
+                nine = _mm_sub_ps(_mm_add_ps(two, four), _mm_add_ps(six, eight));
+                // (4.0*dely)
+                ten = _mm_mul_ps(_mm_set1_ps(4.0), vec_dely);
+                // dv2dy
+                vec_dv2dy = _mm_div_ps(nine, ten);
 
 
+                // (v[i+1][j]-2.0*v[i][j]+v[i-1][j])
+                one = _mm_add_ps(ev, _mm_sub_ps(bv, _mm_mul_ps(_mm_set1_ps(2.0), av)));
+                // (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx
+                two = _mm_div_ps(one, vec_delx);
+                // (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx
+                three = _mm_div_ps(two, vec_delx);
+                // (v[i][j+1]-2.0*v[i][j]+v[i][j-1])
+                four = _mm_add_ps(cv, _mm_sub_ps(fv, _mm_mul_ps(_mm_set1_ps(2.0), av)));
+                // (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely
+                five = _mm_div_ps(four, vec_dely);
+                // (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely
+                six = _mm_div_ps(five, vec_dely);
+                vec_laplv = _mm_add_ps(three, six);
 
 
-                duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
-                    (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
-                    /(4.0*delx);
-                dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
-                    (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
-                    /(4.0*dely);
+                // laplv/Re
+                one = _mm_div_ps(vec_laplv, vec_Re);
+                // (laplv/Re-duvdx-dv2dy)
+                two = _mm_sub_ps(one, _mm_add_ps(vec_dv2dy, vec_duvdx));
+                // del_t*(laplv/Re-duvdx-dv2dy)
+                three = _mm_mul_ps(vec_del_t, two);
+                // v[i][j]+del_t*(laplv/Re-duvdx-dv2dy)
+                vec_g = _mm_add_ps(av, three);
 
-                laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
-                    (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
+                /* store results back into array g */
+                _mm_storeu_ps(g[i]+j, vec_g);
 
-                g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
             /* catches and sets all other types of cell */
             } else {
                 g[i][j] = v[i][j];
             }
+        }
+        /* catch the rest of the operations using the old method */
+        for(; j<=jmax; j++) {
+          if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
+
+              du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
+                  gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
+                  (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
+                  gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
+                  /(4.0*delx);
+              duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
+                  gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
+                  (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
+                  gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
+                  /(4.0*dely);
+              laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
+                  (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
+
+              f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
+          } else {
+              f[i][j] = u[i][j];
+          }
+          if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
+
+              duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
+                  gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
+                  (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
+                  gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
+                  /(4.0*delx);
+              dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
+                  gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
+                  (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
+                  gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
+                  /(4.0*dely);
+              laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
+                  (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
+
+              g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
+          } else {
+              g[i][j] = v[i][j];
+          }
         }
     }
 }
