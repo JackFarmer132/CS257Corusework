@@ -119,12 +119,10 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
     int i, j, iter;
     float add, beta_mod;
     float p0 = 0.0;
-
     int rb; /* Red-black value. */
 
     float rdx2 = 1.0/(delx*delx);
     float rdy2 = 1.0/(dely*dely);
-
     /* Red/Black SOR-iteration */
     for (iter = 0; iter < itermax; iter++) {
         for (rb = 0; rb <= 1; rb++) {
