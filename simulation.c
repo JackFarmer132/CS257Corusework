@@ -84,7 +84,6 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
             } else {
                 f[i][j] = u[i][j];
             }
-
             /* only if both adjacent cells are fluid cells */
             if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
                 duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
@@ -126,17 +125,6 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
     float rdx2 = 1.0/(delx*delx);
     float rdy2 = 1.0/(dely*dely);
 
-    /* Calculate sum of squares */
-    #pragma omp parallel for private(j) reduction (+:p0)
-    for (i = 1; i <= imax; i++) {
-        for (j=1; j<=jmax; j++) {
-            if (flag[i][j] & C_F) { p0 += p[i][j]*p[i][j]; }
-        }
-    }
-
-    p0 = sqrt(p0/ifull);
-    if (p0 < 0.0001) { p0 = 1.0; }
-
     /* Red/Black SOR-iteration */
     for (iter = 0; iter < itermax; iter++) {
         for (rb = 0; rb <= 1; rb++) {
@@ -169,11 +157,13 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
         } /* end of rb */
         //create temporary non-address based var to hold residual
         float temp_res = 0.0;
-        #pragma omp parallel for private(j) reduction(+:temp_res)
+        #pragma omp parallel for private(j) reduction(+:temp_res, p0)
         for (i = 1; i <= imax; i++) {
-            #pragma omp simd reduction(+:temp_res)
+            #pragma omp simd reduction(+:temp_res, p0)
             for (j = 1; j <= jmax; j++) {
                 if (flag[i][j] & C_F) {
+                    /* moved here from fusing computing sum of squares */
+                    p0 += p[i][j]*p[i][j];
                     /* only fluid cells */
                     add = (eps_E*(p[i+1][j]-p[i][j]) -
                         eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
@@ -183,6 +173,9 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
                 }
             }
         }
+        /* more from dispursing sum of squares loop */
+        p0 = sqrt(p0/ifull);
+        if (p0 < 0.0001) { p0 = 1.0; }
         *res = sqrt((temp_res)/ifull)/p0;
 
         /* convergence? */
@@ -233,10 +226,7 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
     for (i=0; i<=imax+1; i++) {
         /* The vertical velocity approaches 0 at the north and south
          * boundaries, but fluid flows freely in the horizontal direction */
-        v[i][jmax] = 0.0;
         u[i][jmax+1] = u[i][jmax];
-
-        v[i][0] = 0.0;
         u[i][0] = u[i][1];
     }
 
@@ -244,6 +234,7 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
      * internal obstacle cells. This forces the u and v velocity to
      * tend towards zero in these cells.
      */
+    #pragma omp parallel for private(j)
     for (i=1; i<=imax; i++) {
         for (j=1; j<=jmax; j++) {
             if (flag[i][j] & B_NSEW) {
