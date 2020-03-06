@@ -414,11 +414,31 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
 }
 
 
+/* Calculate the right hand side of the pressure equation */
+void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
+    int jmax, float del_t, float delx, float dely)
+{
+    int i, j;
+
+    for (i=1;i<=imax;i++) {
+        for (j=1;j<=jmax;j++) {
+            if (flag[i][j] & C_F) {
+                /* only for fluid and non-surface cells */
+                rhs[i][j] = (
+                             (f[i][j]-f[i-1][j])/delx +
+                             (g[i][j]-g[i][j-1])/dely
+                            ) / del_t;
+            }
+        }
+    }
+}
+
+
 
 /* Red/Black SOR to solve the poisson equation */
-int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int imax, int jmax,
-    float delx, float dely, float del_t, float eps, int itermax, float omega,
-    float *res, int ifull, int temp)
+int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
+    float delx, float dely, float eps, int itermax, float omega,
+    float *res, int ifull)
 {
     int i, j, iter;
     float add, beta_mod;
@@ -432,18 +452,9 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
         for (rb = 0; rb <= 1; rb++) {
             #pragma omp parallel for private(j)
             for (i = 1; i <= imax; i++) {
-                #pragma omp simd
                 for (j = 1; j <= jmax; j++) {
                     if ((i+j) % 2 != rb) { continue; }
                     if (flag[i][j] & C_F) {
-                      /* only compute if first iteration */
-                      if (iter == 0){
-                          /* moved in from computeRhs */
-                          rhs[i][j] = (
-                                       (f[i][j]-f[i-1][j])/delx +
-                                       (g[i][j]-g[i][j-1])/dely
-                                      ) / del_t;
-                        }
                         /* modified star near boundary */
                         beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
                         p[i][j] = (1.-omega)*p[i][j] -
@@ -461,7 +472,6 @@ int poissonSolver(float **f, float **g, float **p, float **rhs, char **flag, int
         float temp_res = 0.0;
         #pragma omp parallel for private(j) reduction(+:temp_res, p0)
         for (i = 1; i <= imax; i++) {
-            #pragma omp simd reduction(+:temp_res, p0)
             for (j = 1; j <= jmax; j++) {
                 if (flag[i][j] & C_F) {
                     /* moved here from fusing computing sum of squares */
