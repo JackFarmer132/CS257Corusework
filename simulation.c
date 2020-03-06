@@ -198,7 +198,7 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
             // du2dx
             vec_du2dx = _mm_div_ps(nine, ten);
 
-
+ 
             // (v[i][j]+v[i+1][j])
             one = _mm_add_ps(av, bv);
             // fabs(v[i][j]+v[i+1][j])
