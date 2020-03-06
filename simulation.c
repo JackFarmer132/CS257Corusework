@@ -450,10 +450,148 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     /* Red/Black SOR-iteration */
     for (iter = 0; iter < itermax; iter++) {
         for (rb = 0; rb <= 1; rb++) {
-            #pragma omp parallel for private(j)
+            // #pragma omp parallel for private(j)
             for (i = 1; i <= imax; i++) {
-                for (j = 1; j <= jmax; j++) {
+                // if i is odd and rb = 0 or i is even and rb = 1, all odd j's
+                if (((i % 2 == 1) && (rb == 0)) || ((i % 2 == 0) && (rb == 1))) {
+                    j = 1;
+                }
+                // if i is odd and rb = 1 or i is even and rb = 0, all even j's
+                else {
+                    j = 2;
+                }
+                for (; j+8 <= jmax-1; j+=8) {
                     if ((i+j) % 2 != rb) { continue; }
+                    if (flag[i][j] & C_F) {
+
+                        float temp[4];
+
+                        __m128 one;
+                        __m128 two;
+                        __m128 three;
+                        __m128 four;
+                        __m128 five;
+                        __m128 six;
+                        __m128 seven;
+                        __m128 eight;
+                        __m128 nine;
+                        __m128 ten;
+                        __m128 eleven;
+                        __m128 twelve;
+                        __m128 thirteen;
+
+                        // loads -omega
+                        __m128 vec_omega = _mm_set1_ps(-omega);
+                        // loads rdy2
+                        __m128 vec_rdy2 = _mm_set1_ps(rdy2);
+                        // loads rdx2
+                        __m128 vec_rdx2 = _mm_set1_ps(rdx2);
+                        // holds beta_mod
+                        __m128 vec_beta_mod;
+                        // holds new p values
+                        __m128 new_p;
+
+
+
+                        // __m128 a = _mm_setr_ps(1.0, 2.0, 3.0, 4.0);
+                        // __m128 b = _mm_setr_ps(5.0, 6.0, 7.0, 8.0);
+                        // //1, 3, 5, 7
+                        // __m128 c = _mm_shuffle_ps(a, b, _MM_SHUFFLE(2,0,2,0));
+
+
+
+
+
+                        // loads  p[i][j], p[i][j+2], p[i][j+4], p[i][j+6]
+                        __m128 ap = _mm_shuffle_ps(_mm_loadu_ps(p[i] + j), _mm_loadu_ps(p[i] + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads p[i+1][j], p[i+1][j+2], p[i+1][j+4], p[i+1][j+6]
+                        // __m128 bp = _mm_loadu_ps(p[i+1] + j);
+                        __m128 bp = _mm_shuffle_ps(_mm_loadu_ps(p[i+1] + j), _mm_loadu_ps(p[i+1] + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads p[i-1][j], p[i-1][j+2], p[i-1][j+4], p[i-1][j+6]
+                        // __m128 cp = _mm_loadu_ps(p[i-1] + j);
+                        __m128 cp = _mm_shuffle_ps(_mm_loadu_ps(p[i-1] + j), _mm_loadu_ps(p[i-1] + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads p[i][j+1], p[i][j+3], p[i][j+5], p[i][j+7]
+                        // __m128 dp = _mm_loadu_ps(p[i] + 1 + j);
+                        __m128 dp = _mm_shuffle_ps(_mm_loadu_ps(p[i] + 1 + j), _mm_loadu_ps(p[i] + 1 + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads p[i][j-1], p[i][j+1], p[i][j+3], p[i][j+5]
+                        // __m128 ep = _mm_loadu_ps(p[i] - 1 + j);
+                        __m128 ep = _mm_shuffle_ps(_mm_loadu_ps(p[i] - 1 + j), _mm_loadu_ps(p[i] - 1 + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads rhs[i][j], rhs[i][j+2], rhs[i][j+4], rhs[i][j+8]
+                        // __m128 vec_rhs = _mm_loadu_ps(rhs[i] + j);
+                        __m128 vec_rhs = _mm_shuffle_ps(_mm_loadu_ps(rhs[i] + j), _mm_loadu_ps(rhs[i] + j + 4), _MM_SHUFFLE(2,0,2,0));
+                        // loads eps_N
+                        __m128 vec_eps_N = _mm_div_ps(_mm_setr_ps((float) (flag[i][j+1] & C_F), (float) (flag[i][j+3] & C_F), (float) (flag[i][j+5] & C_F), (float) (flag[i][j+7] & C_F)), _mm_set1_ps(16.0));
+                        // loads eps_S
+                        __m128 vec_eps_S = _mm_div_ps(_mm_setr_ps((float) (flag[i][j-1] & C_F), (float) (flag[i][j+1] & C_F), (float) (flag[i][j+3] & C_F), (float) (flag[i][j+5] & C_F)), _mm_set1_ps(16.0));
+                        // loads eps_E
+                        __m128 vec_eps_E = _mm_div_ps(_mm_setr_ps((float) (flag[i+1][j] & C_F), (float) (flag[i+1][j+2] & C_F), (float) (flag[i+1][j+4] & C_F), (float) (flag[i+1][j+6] & C_F)), _mm_set1_ps(16.0));
+                        // loads eps_W
+                        __m128 vec_eps_W = _mm_div_ps(_mm_setr_ps((float) (flag[i-1][j] & C_F), (float) (flag[i-1][j+2] & C_F), (float) (flag[i-1][j+4] & C_F), (float) (flag[i-1][j+6] & C_F)), _mm_set1_ps(16.0));
+
+                        // (eps_E+eps_W)
+                        one = _mm_add_ps(vec_eps_E, vec_eps_W);
+                        // (eps_E+eps_W)*rdx2
+                        two = _mm_mul_ps(one, vec_rdx2);
+                        // (eps_N+eps_S)
+                        three = _mm_add_ps(vec_eps_N, vec_eps_S);
+                        // (eps_N+eps_S)*rdy2
+                        four = _mm_mul_ps(three, vec_rdy2);
+                        // ((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2)
+                        five = _mm_add_ps(two, four);
+                        // -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2)
+                        vec_beta_mod = _mm_div_ps(vec_omega, five);
+
+
+                        // (1.-omega)
+                        one = _mm_add_ps(vec_omega, _mm_set1_ps(1.0));
+                        // (1.-omega)*p[i][j]
+                        two = _mm_mul_ps(one, ap);
+                        // eps_E*p[i+1][j]
+                        three = _mm_mul_ps(vec_eps_E, bp);
+                        // eps_W*p[i-1][j]
+                        four = _mm_mul_ps(vec_eps_W, cp);
+                        // (eps_E*p[i+1][j]+eps_W*p[i-1][j])
+                        five = _mm_add_ps(three, four);
+                        // (eps_E*p[i+1][j]+eps_W*p[i-1][j])*rdx2
+                        six = _mm_mul_ps(five, vec_rdx2);
+                        // eps_N*p[i][j+1]
+                        seven = _mm_mul_ps(vec_eps_N, dp);
+                        // eps_S*p[i][j-1]
+                        eight = _mm_mul_ps(vec_eps_S, ep);
+                        // (eps_N*p[i][j+1]+eps_S*p[i][j-1])
+                        nine = _mm_add_ps(seven, eight);
+                        // (eps_N*p[i][j+1]+eps_S*p[i][j-1])*rdy2
+                        ten = _mm_mul_ps(nine, vec_rdy2);
+                        // (eps_E*p[i+1][j]+eps_W*p[i-1][j])*rdx2 + (eps_N*p[i][j+1]+eps_S*p[i][j-1])*rdy2
+                        eleven = _mm_add_ps(six, ten);
+                        // factor to multiply by beta_mod
+                        twelve = _mm_sub_ps(eleven, vec_rhs);
+                        // thing to take from (1.-omega)*p[i][j]
+                        thirteen = _mm_mul_ps(vec_beta_mod, twelve);
+                        // new p
+                        new_p = _mm_sub_ps(two, thirteen);
+
+                        /* modified star near boundary */
+                        beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
+                        p[i][j] = (1.-omega)*p[i][j] -
+                            beta_mod*(
+                                  (eps_E*p[i+1][j]+eps_W*p[i-1][j])*rdx2
+                                + (eps_N*p[i][j+1]+eps_S*p[i][j-1])*rdy2
+                                - rhs[i][j]
+                            );
+                        _mm_storeu_ps(temp, new_p);
+
+                        // printf("original: %f        new: %f\n", p[i][j], temp[0]);
+                        // printf("The next is: %f\n", temp[1]);
+                        p[i][j] = temp[0];
+                        p[i][j+2] = temp[1];
+                        p[i][j+4] = temp[2];
+                        p[i][j+6] = temp[3];
+                    }
+                } /* end of j */
+
+                //need to catch the rest
+                for (; j<=jmax; j+=2) {
                     if (flag[i][j] & C_F) {
                         /* modified star near boundary */
                         beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
@@ -464,7 +602,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                                 - rhs[i][j]
                             );
                     }
-                } /* end of j */
+                }
             } /* end of i */
           /* end of parallel section */
         } /* end of rb */
