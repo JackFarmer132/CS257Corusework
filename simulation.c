@@ -198,7 +198,7 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
             // du2dx
             vec_du2dx = _mm_div_ps(nine, ten);
 
- 
+
             // (v[i][j]+v[i+1][j])
             one = _mm_add_ps(av, bv);
             // fabs(v[i][j]+v[i+1][j])
@@ -497,7 +497,6 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     __m128 vec_eps_W;
 
 
-
     /* Red/Black SOR-iteration */
     for (iter = 0; iter < itermax; iter++) {
         for (rb = 0; rb <= 1; rb++) {
@@ -709,7 +708,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                 sum = _mm_hadd_ps(sum, sum);
                 //get sum from vector
                 _mm_storeu_ps(temp_store, sum);
-                // temp_res += temp_store[0];
+                temp_res += temp_store[0];
             }
             //catch the rest
             for (; j<=jmax; j++) {
@@ -745,9 +744,83 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
     char **flag, int imax, int jmax, float del_t, float delx, float dely)
 {
     int i, j;
-    #pragma omp parallel for
+
+    //temporary vector stores for vector calculations
+    __m128 one;
+    __m128 two;
+
+    __m128 vec_u;
+    __m128 vec_v;
+    __m128 vec_f;
+    __m128 vec_g;
+    __m128 ap;
+    __m128 bp;
+    __m128 cp;
+    __m128 mask;
+    __m128 vec_delx = _mm_set1_ps(delx);
+    __m128 vec_dely = _mm_set1_ps(dely);
+    __m128 vec_del_t = _mm_set1_ps(del_t);
+    // del_t/delx
+    __m128 vec_t_by_x = _mm_div_ps(vec_del_t, vec_delx);
+    // del_t/dely
+    __m128 vec_t_by_y = _mm_div_ps(vec_del_t, vec_dely);
+
+    #pragma omp parallel for private(j, one, two, vec_u, vec_v, vec_f, vec_g, ap, bp, cp)
     for (i=1; i<=imax; i++) {
-        for (j=1; j<=jmax; j++) {
+        __m128 result;
+        for (j=1; j+4<=jmax-1; j+=4) {
+            // loads u[i][j], u[i][j+1], u[i][j+2], u[i][j+3]
+            vec_u = _mm_loadu_ps(u[i] + j);
+            // loads v[i][j], v[i][j+1], v[i][j+2], v[i][j+3]
+            vec_v = _mm_loadu_ps(v[i] + j);
+            // loads f[i][j], f[i][j+1], f[i][j+2], f[i][j+3]
+            vec_f = _mm_loadu_ps(f[i] + j);
+            // loads g[i][j], g[i][j+1], g[i][j+2], g[i][j+3]
+            vec_g = _mm_loadu_ps(g[i] + j);
+            // loads p[i][j], p[i][j+1], p[i][j+2], p[i][j+3]
+            ap =_mm_loadu_ps(p[i] + j);
+            // loads p[i+1][j], p[i+1][j+1], p[i+1][j+2], p[i+1][j+3]
+            bp =_mm_loadu_ps(p[i+1] + j);
+            // loads p[i][j+1], p[i][j+2], p[i][j+3], p[i][j+4]
+            cp = _mm_loadu_ps(p[i] + 1 + j);
+
+
+            // ((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F))
+            mask = _mm_setr_ps(((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F)),
+                               ((i != imax) && (flag[i][j+1] & C_F) && (flag[i+1][j+1] & C_F)),
+                               ((i != imax) && (flag[i][j+2] & C_F) && (flag[i+1][j+2] & C_F)),
+                               ((i != imax) && (flag[i][j+3] & C_F) && (flag[i+1][j+3] & C_F)));
+
+            //fixes issue where 1.0 represented true, now -nan does
+            mask = _mm_cmpeq_ps(mask, _mm_set1_ps(1.0));
+
+            // (p[i+1][j]-p[i][j])
+            one = _mm_sub_ps(bp, ap);
+            // (p[i+1][j]-p[i][j])*del_t/delx
+            two = _mm_mul_ps(one, vec_t_by_x);
+            // result for u
+            result = _mm_or_ps(_mm_and_ps(mask, _mm_sub_ps(vec_f, two)), _mm_andnot_ps(mask, vec_u));
+            _mm_storeu_ps(u[i]+j, result);
+
+
+            // ((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F))
+            mask = _mm_setr_ps(((j != jmax) && (flag[i][j] & C_F) && (flag[i][j+1] & C_F)),
+                               ((j != jmax) && (flag[i][j+1] & C_F) && (flag[i][j+2] & C_F)),
+                               ((j != jmax) && (flag[i][j+2] & C_F) && (flag[i][j+3] & C_F)),
+                               ((j != jmax) && (flag[i][j+3] & C_F) && (flag[i][j+4] & C_F)));
+           //fixes issue where 1.0 represented true, now -nan does
+           mask = _mm_cmpeq_ps(mask, _mm_set1_ps(1.0));
+
+            // (p[i][j+1]-p[i][j])
+            one = _mm_sub_ps(cp, ap);
+            // (p[i][j+1]-p[i][j])*del_t/dely
+            two = _mm_mul_ps(one, vec_t_by_y);
+            // result for u
+            result = _mm_or_ps(_mm_and_ps(mask, _mm_sub_ps(vec_g, two)), _mm_andnot_ps(mask, vec_v));
+            _mm_storeu_ps(v[i]+j, result);
+        }
+        //catch the rest
+        for(; j<=jmax; j++) {
             /* only if both adjacent cells are fluid cells */
             if ((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
                 u[i][j] = f[i][j]-(p[i+1][j]-p[i][j])*del_t/delx;
