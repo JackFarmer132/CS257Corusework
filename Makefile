@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O3 -Wall -g -fopenmp
+CFLAGS=-O3 -Wall -g -fopenmp -msse4.1
 
 .c.o:
 	$(CC) -c $(CFLAGS) $<
