@@ -437,6 +437,7 @@ void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
     __m128 bg;
     __m128 vec_rhs;
 
+    #pragma omp parallel for private(j, vec_rhs, af, bf, ag, bg, mask)
     for (i=1;i<=imax;i++) {
         __m128 result;
         for (j=1;j+4<=jmax-1;j+=4) {
@@ -487,7 +488,6 @@ void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
         }
     }
 }
-
 
 
 /* Red/Black SOR to solve the poisson equation */
