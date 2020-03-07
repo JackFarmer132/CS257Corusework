@@ -420,8 +420,63 @@ void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
 {
     int i, j;
 
+    // placeholdsers for vector operations
+    __m128 one;
+    __m128 two;
+    __m128 three;
+    __m128 four;
+    __m128 five;
+
+    __m128 vec_delx = _mm_set1_ps(delx);
+    __m128 vec_dely = _mm_set1_ps(dely);
+    __m128 vec_del_t = _mm_set1_ps(del_t);
+    __m128 mask;
+    __m128 af;
+    __m128 bf;
+    __m128 ag;
+    __m128 bg;
+    __m128 vec_rhs;
+
     for (i=1;i<=imax;i++) {
-        for (j=1;j<=jmax;j++) {
+        __m128 result;
+        for (j=1;j+4<=jmax-1;j+=4) {
+            //loads rhs[i][j], rhs[i][j+1], rhs[i][j+2], rhs[i][j+3]
+            vec_rhs = _mm_loadu_ps(rhs[i] + j);
+            // loads f[i][j], f[i][j+1], f[i][j+2], f[i][j+3]
+            af = _mm_loadu_ps(f[i] + j);
+            // loads f[i-1][j], f[i-1][j+1], f[i-1][j+2], f[i-1][j+3]
+            bf = _mm_loadu_ps(f[i-1] + j);
+            // loads g[i][j], g[i][j+1], g[i][j+2], g[i][j+3]
+            ag = _mm_loadu_ps(g[i] + j);
+            // loads g[i][j-1], g[i][j], g[i][j+1], g[i][j+2]
+            bg = _mm_loadu_ps(g[i] -1 + j);
+
+            // (flag[i][j] & C_F)
+            mask = _mm_setr_ps((flag[i][j] & C_F),
+                               (flag[i][j+1] & C_F),
+                               (flag[i][j+2] & C_F),
+                               (flag[i][j+3] & C_F));
+
+            //fixes issue where 1.0 represented true, now -nan does
+            mask = _mm_cmpeq_ps(mask, _mm_set1_ps(16.0));
+
+            // (f[i][j]-f[i-1][j])
+            one = _mm_sub_ps(af, bf);
+            // (f[i][j]-f[i-1][j])/delx
+            two = _mm_div_ps(one, vec_delx);
+            // (g[i][j]-g[i][j-1])
+            three = _mm_sub_ps(ag, bg);
+            // (g[i][j]-g[i][j-1])/dely
+            four = _mm_div_ps(three, vec_dely);
+            // (f[i][j]-f[i-1][j])/delx + (g[i][j]-g[i][j-1])/dely
+            five = _mm_add_ps(two, four);
+
+            // correct values for p
+            result = _mm_or_ps(_mm_and_ps(mask, _mm_div_ps(five, vec_del_t)), _mm_andnot_ps(mask, vec_rhs));
+            _mm_storeu_ps(rhs[i]+j, result);
+        }
+        //catch the rest
+        for (; j<=jmax; j++) {
             if (flag[i][j] & C_F) {
                 /* only for fluid and non-surface cells */
                 rhs[i][j] = (
