@@ -496,8 +496,9 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     float *res, int ifull)
 {
     int i, j, iter;
-    float add, beta_mod;
-    float p0 = 0.0;
+    // float add;
+    float beta_mod;
+    // float p0 = 0.0;
     int rb; /* Red-black value. */
 
     float rdx2 = 1.0/(delx*delx);
@@ -669,123 +670,124 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
             } /* end of i */
           /* end of parallel section */
         } /* end of rb */
-        //create temporary non-address based var to hold residual
-        float temp_res = 0.0;
-        #pragma omp parallel for private(j, mask, ap, bp, cp, dp, ep, vec_rhs, vec_eps_N, vec_eps_S, vec_eps_E, vec_eps_W, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen) reduction(+:temp_res, p0)
-        for (i = 1; i <= imax; i++) {
-            //extra vectors for operations
-            __m128 vec_p0;
-            __m128 result;
-            __m128 sum;
-            __m128 vec_add;
-            __m128 vec_temp_res;
-
-            for (j = 1; j+4 <= jmax-1; j+=4) {
-
-                // (flag[i][j] & C_F)
-                mask = _mm_setr_ps((flag[i][j] & C_F),
-                                   (flag[i][j+1] & C_F),
-                                   (flag[i][j+2] & C_F),
-                                   (flag[i][j+3] & C_F));
-
-                //fixes issue where 1.0 represented true, now -nan does
-                mask = _mm_cmpeq_ps(mask, _mm_set1_ps(16.0));
-
-                // loads p[i][j], p[i][j+1], p[i][j+2], p[i][j+3],
-                ap = _mm_loadu_ps(p[i] + j);
-                // loads p[i+1][j], p[i+1][j+1], p[i+1][j+2], p[i+1][j+3],
-                bp = _mm_loadu_ps(p[i+1] + j);
-                // loads p[i-1][j], p[i-1][j+1], p[i-1][j+2], p[i-1][j+3],
-                cp = _mm_loadu_ps(p[i-1] + j);
-                // loads p[i][j+1], p[i][j+2], p[i][j+3], p[i][j+4],
-                dp = _mm_loadu_ps(p[i] + j + 1);
-                // loads p[i][j-1], p[i][j], p[i][j+1], p[i][j+2],
-                ep = _mm_loadu_ps(p[i] + j - 1);
-                // loads rhs[i][j], rhs[i][j+1], rhs[i][j+2], rhs[i][j+3]
-                vec_rhs = _mm_loadu_ps(rhs[i] + j);
-                // loads eps_N
-                vec_eps_N = _mm_div_ps(_mm_setr_ps((float) (flag[i][j+1] & C_F), (float) (flag[i][j+2] & C_F), (float) (flag[i][j+3] & C_F), (float) (flag[i][j+4] & C_F)), _mm_set1_ps(16.0));
-                // loads eps_S
-                vec_eps_S = _mm_div_ps(_mm_setr_ps((float) (flag[i][j-1] & C_F), (float) (flag[i][j] & C_F), (float) (flag[i][j+1] & C_F), (float) (flag[i][j+2] & C_F)), _mm_set1_ps(16.0));
-                // loads eps_E
-                vec_eps_E = _mm_div_ps(_mm_setr_ps((float) (flag[i+1][j] & C_F), (float) (flag[i+1][j+1] & C_F), (float) (flag[i+1][j+2] & C_F), (float) (flag[i+1][j+3] & C_F)), _mm_set1_ps(16.0));
-                // loads eps_W
-                vec_eps_W = _mm_div_ps(_mm_setr_ps((float) (flag[i-1][j] & C_F), (float) (flag[i-1][j+1] & C_F), (float) (flag[i-1][j+2] & C_F), (float) (flag[i-1][j+3] & C_F)), _mm_set1_ps(16.0));
-
-                // p[i][j]*p[i][j]
-                vec_p0 = _mm_mul_ps(ap, ap);
-                //find which ones are valid for adding to p0 sum
-                result = _mm_or_ps(_mm_and_ps(mask, vec_p0), _mm_andnot_ps(mask, _mm_set1_ps(0.0)));
-                //running hadd twice makes every element the sum of everything in vector
-                sum = _mm_hadd_ps(result, result);
-                sum = _mm_hadd_ps(sum, sum);
-                //get sum from vector
-                _mm_storeu_ps(temp_store, sum);
-                p0 += temp_store[0];
-
-
-                // (p[i+1][j]-p[i][j])
-                one = _mm_sub_ps(bp, ap);
-                // eps_E*(p[i+1][j]-p[i][j])
-                two = _mm_mul_ps(vec_eps_E, one);
-                // (p[i][j]-p[i-1][j])
-                three = _mm_sub_ps(ap, cp);
-                // eps_W*(p[i][j]-p[i-1][j])
-                four = _mm_mul_ps(vec_eps_W, three);
-                // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j]))
-                five = _mm_sub_ps(two, four);
-                // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j])) * rdx2
-                six = _mm_mul_ps(five, vec_rdx2);
-                // (p[i][j+1]-p[i][j])
-                seven = _mm_sub_ps(dp, ap);
-                // eps_N*(p[i][j+1]-p[i][j])
-                eight = _mm_mul_ps(vec_eps_N, seven);
-                // (p[i][j]-p[i][j-1])
-                nine = _mm_sub_ps(ap, ep);
-                // eps_S*(p[i][j]-p[i][j-1])
-                ten = _mm_mul_ps(vec_eps_S, nine);
-                // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1]))
-                eleven = _mm_sub_ps(eight, ten);
-                // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1])) * rdy2
-                twelve = _mm_mul_ps(eleven, vec_rdy2);
-                // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
-                // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1])) * rdy2
-                thirteen = _mm_add_ps(six, twelve);
-                // add
-                vec_add = _mm_sub_ps(thirteen, vec_rhs);
-                // holds temp_res from the 4 array elements
-                vec_temp_res = _mm_mul_ps(vec_add, vec_add);
-                //find which ones are valid for adding to temp_res sum
-                result = _mm_or_ps(_mm_and_ps(mask, vec_temp_res), _mm_andnot_ps(mask, _mm_set1_ps(0.0)));
-                _mm_storeu_ps(temp_store, result);
-                //sum up the values in vector
-                sum = _mm_hadd_ps(result, result);
-                sum = _mm_hadd_ps(sum, sum);
-                //get sum from vector
-                _mm_storeu_ps(temp_store, sum);
-                temp_res += temp_store[0];
-            }
-            //catch the rest
-            for (; j<=jmax; j++) {
-                if (flag[i][j] & C_F) {
-                    /* moved here from fusing computing sum of squares */
-                    p0 += p[i][j]*p[i][j];
-                    /* only fluid cells */
-                    add = (eps_E*(p[i+1][j]-p[i][j]) -
-                        eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
-                        (eps_N*(p[i][j+1]-p[i][j]) -
-                        eps_S*(p[i][j]-p[i][j-1])) * rdy2  -  rhs[i][j];
-                    temp_res += add*add;
-                }
-            }
-        }
-        /* more from dispursing sum of squares loop */
-        p0 = sqrt(p0/ifull);
-        if (p0 < 0.0001) { p0 = 1.0; }
-        *res = sqrt((temp_res)/ifull)/p0;
-
-        /* convergence? */
-        if (*res<eps) break;
+        /* res did not affect the program but intrinsics were added, so just commented out to keep example of vector intrinsics*/
+        // //create temporary non-address based var to hold residual
+        // float temp_res = 0.0;
+        // #pragma omp parallel for private(j, mask, ap, bp, cp, dp, ep, vec_rhs, vec_eps_N, vec_eps_S, vec_eps_E, vec_eps_W, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen) reduction(+:temp_res, p0)
+        // for (i = 1; i <= imax; i++) {
+        //     //extra vectors for operations
+        //     __m128 vec_p0;
+        //     __m128 result;
+        //     __m128 sum;
+        //     __m128 vec_add;
+        //     __m128 vec_temp_res;
+        //
+        //     for (j = 1; j+4 <= jmax-1; j+=4) {
+        //
+        //         // (flag[i][j] & C_F)
+        //         mask = _mm_setr_ps((flag[i][j] & C_F),
+        //                            (flag[i][j+1] & C_F),
+        //                            (flag[i][j+2] & C_F),
+        //                            (flag[i][j+3] & C_F));
+        //
+        //         //fixes issue where 1.0 represented true, now -nan does
+        //         mask = _mm_cmpeq_ps(mask, _mm_set1_ps(16.0));
+        //
+        //         // loads p[i][j], p[i][j+1], p[i][j+2], p[i][j+3],
+        //         ap = _mm_loadu_ps(p[i] + j);
+        //         // loads p[i+1][j], p[i+1][j+1], p[i+1][j+2], p[i+1][j+3],
+        //         bp = _mm_loadu_ps(p[i+1] + j);
+        //         // loads p[i-1][j], p[i-1][j+1], p[i-1][j+2], p[i-1][j+3],
+        //         cp = _mm_loadu_ps(p[i-1] + j);
+        //         // loads p[i][j+1], p[i][j+2], p[i][j+3], p[i][j+4],
+        //         dp = _mm_loadu_ps(p[i] + j + 1);
+        //         // loads p[i][j-1], p[i][j], p[i][j+1], p[i][j+2],
+        //         ep = _mm_loadu_ps(p[i] + j - 1);
+        //         // loads rhs[i][j], rhs[i][j+1], rhs[i][j+2], rhs[i][j+3]
+        //         vec_rhs = _mm_loadu_ps(rhs[i] + j);
+        //         // loads eps_N
+        //         vec_eps_N = _mm_div_ps(_mm_setr_ps((float) (flag[i][j+1] & C_F), (float) (flag[i][j+2] & C_F), (float) (flag[i][j+3] & C_F), (float) (flag[i][j+4] & C_F)), _mm_set1_ps(16.0));
+        //         // loads eps_S
+        //         vec_eps_S = _mm_div_ps(_mm_setr_ps((float) (flag[i][j-1] & C_F), (float) (flag[i][j] & C_F), (float) (flag[i][j+1] & C_F), (float) (flag[i][j+2] & C_F)), _mm_set1_ps(16.0));
+        //         // loads eps_E
+        //         vec_eps_E = _mm_div_ps(_mm_setr_ps((float) (flag[i+1][j] & C_F), (float) (flag[i+1][j+1] & C_F), (float) (flag[i+1][j+2] & C_F), (float) (flag[i+1][j+3] & C_F)), _mm_set1_ps(16.0));
+        //         // loads eps_W
+        //         vec_eps_W = _mm_div_ps(_mm_setr_ps((float) (flag[i-1][j] & C_F), (float) (flag[i-1][j+1] & C_F), (float) (flag[i-1][j+2] & C_F), (float) (flag[i-1][j+3] & C_F)), _mm_set1_ps(16.0));
+        //
+        //         // p[i][j]*p[i][j]
+        //         vec_p0 = _mm_mul_ps(ap, ap);
+        //         //find which ones are valid for adding to p0 sum
+        //         result = _mm_or_ps(_mm_and_ps(mask, vec_p0), _mm_andnot_ps(mask, _mm_set1_ps(0.0)));
+        //         //running hadd twice makes every element the sum of everything in vector
+        //         sum = _mm_hadd_ps(result, result);
+        //         sum = _mm_hadd_ps(sum, sum);
+        //         //get sum from vector
+        //         _mm_storeu_ps(temp_store, sum);
+        //         p0 += temp_store[0];
+        //
+        //
+        //         // (p[i+1][j]-p[i][j])
+        //         one = _mm_sub_ps(bp, ap);
+        //         // eps_E*(p[i+1][j]-p[i][j])
+        //         two = _mm_mul_ps(vec_eps_E, one);
+        //         // (p[i][j]-p[i-1][j])
+        //         three = _mm_sub_ps(ap, cp);
+        //         // eps_W*(p[i][j]-p[i-1][j])
+        //         four = _mm_mul_ps(vec_eps_W, three);
+        //         // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j]))
+        //         five = _mm_sub_ps(two, four);
+        //         // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j])) * rdx2
+        //         six = _mm_mul_ps(five, vec_rdx2);
+        //         // (p[i][j+1]-p[i][j])
+        //         seven = _mm_sub_ps(dp, ap);
+        //         // eps_N*(p[i][j+1]-p[i][j])
+        //         eight = _mm_mul_ps(vec_eps_N, seven);
+        //         // (p[i][j]-p[i][j-1])
+        //         nine = _mm_sub_ps(ap, ep);
+        //         // eps_S*(p[i][j]-p[i][j-1])
+        //         ten = _mm_mul_ps(vec_eps_S, nine);
+        //         // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1]))
+        //         eleven = _mm_sub_ps(eight, ten);
+        //         // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1])) * rdy2
+        //         twelve = _mm_mul_ps(eleven, vec_rdy2);
+        //         // (eps_E*(p[i+1][j]-p[i][j]) - eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
+        //         // (eps_N*(p[i][j+1]-p[i][j]) - eps_S*(p[i][j]-p[i][j-1])) * rdy2
+        //         thirteen = _mm_add_ps(six, twelve);
+        //         // add
+        //         vec_add = _mm_sub_ps(thirteen, vec_rhs);
+        //         // holds temp_res from the 4 array elements
+        //         vec_temp_res = _mm_mul_ps(vec_add, vec_add);
+        //         //find which ones are valid for adding to temp_res sum
+        //         result = _mm_or_ps(_mm_and_ps(mask, vec_temp_res), _mm_andnot_ps(mask, _mm_set1_ps(0.0)));
+        //         _mm_storeu_ps(temp_store, result);
+        //         //sum up the values in vector
+        //         sum = _mm_hadd_ps(result, result);
+        //         sum = _mm_hadd_ps(sum, sum);
+        //         //get sum from vector
+        //         _mm_storeu_ps(temp_store, sum);
+        //         temp_res += temp_store[0];
+        //     }
+        //     //catch the rest
+        //     for (; j<=jmax; j++) {
+        //         if (flag[i][j] & C_F) {
+        //             /* moved here from fusing computing sum of squares */
+        //             p0 += p[i][j]*p[i][j];
+        //             /* only fluid cells */
+        //             add = (eps_E*(p[i+1][j]-p[i][j]) -
+        //                 eps_W*(p[i][j]-p[i-1][j])) * rdx2  +
+        //                 (eps_N*(p[i][j+1]-p[i][j]) -
+        //                 eps_S*(p[i][j]-p[i][j-1])) * rdy2  -  rhs[i][j];
+        //             temp_res += add*add;
+        //         }
+        //     }
+        // }
+        // /* more from dispursing sum of squares loop */
+        // p0 = sqrt(p0/ifull);
+        // if (p0 < 0.0001) { p0 = 1.0; }
+        // *res = sqrt((temp_res)/ifull)/p0;
+        //
+        // /* convergence? */
+        // if (*res<eps) break;
     } /* end of iter */
 
     return iter;
