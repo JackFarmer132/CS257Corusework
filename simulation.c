@@ -135,7 +135,7 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
 
     #pragma omp parallel for private(j)
     for (i=1; i<=imax; i++) {
-        for (j=1; j+4<=jmax-1; j+=4) {
+        for (j=1; j<=jmax; j+=4) {
 
             //loads u[i][j], u[i][j+1], u[i][j+2], u[i][j+3]
             au = _mm_loadu_ps(u[i] + j);
@@ -369,47 +369,6 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
             // store into g
             _mm_storeu_ps(g[i]+j, result);
         }
-        /* catch the rest of the operations using the old method */
-        for(; j<=jmax; j++) {
-            if ((flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
-
-                du2dx = ((u[i][j]+u[i+1][j])*(u[i][j]+u[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i+1][j])*(u[i][j]-u[i+1][j])-
-                    (u[i-1][j]+u[i][j])*(u[i-1][j]+u[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i][j])*(u[i-1][j]-u[i][j]))
-                    /(4.0*delx);
-                duvdy = ((v[i][j]+v[i+1][j])*(u[i][j]+u[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i+1][j])*(u[i][j]-u[i][j+1])-
-                    (v[i][j-1]+v[i+1][j-1])*(u[i][j-1]+u[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i+1][j-1])*(u[i][j-1]-u[i][j]))
-                    /(4.0*dely);
-                laplu = (u[i+1][j]-2.0*u[i][j]+u[i-1][j])/delx/delx+
-                    (u[i][j+1]-2.0*u[i][j]+u[i][j-1])/dely/dely;
-
-                f[i][j] = u[i][j]+del_t*(laplu/Re-du2dx-duvdy);
-            } else {
-                f[i][j] = u[i][j];
-            }
-            if ((flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
-
-                duvdx = ((u[i][j]+u[i][j+1])*(v[i][j]+v[i+1][j])+
-                    gamma*fabs(u[i][j]+u[i][j+1])*(v[i][j]-v[i+1][j])-
-                    (u[i-1][j]+u[i-1][j+1])*(v[i-1][j]+v[i][j])-
-                    gamma*fabs(u[i-1][j]+u[i-1][j+1])*(v[i-1][j]-v[i][j]))
-                    /(4.0*delx);
-                dv2dy = ((v[i][j]+v[i][j+1])*(v[i][j]+v[i][j+1])+
-                    gamma*fabs(v[i][j]+v[i][j+1])*(v[i][j]-v[i][j+1])-
-                    (v[i][j-1]+v[i][j])*(v[i][j-1]+v[i][j])-
-                    gamma*fabs(v[i][j-1]+v[i][j])*(v[i][j-1]-v[i][j]))
-                    /(4.0*dely);
-                laplv = (v[i+1][j]-2.0*v[i][j]+v[i-1][j])/delx/delx+
-                    (v[i][j+1]-2.0*v[i][j]+v[i][j-1])/dely/dely;
-
-                g[i][j] = v[i][j]+del_t*(laplv/Re-duvdx-dv2dy);
-            } else {
-                g[i][j] = v[i][j];
-            }
-        }
     }
 }
 
@@ -440,7 +399,7 @@ void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
     #pragma omp parallel for private(j, vec_rhs, af, bf, ag, bg, mask)
     for (i=1;i<=imax;i++) {
         __m128 result;
-        for (j=1;j+4<=jmax-1;j+=4) {
+        for (j=1;j<=jmax;j+=4) {
             //loads rhs[i][j], rhs[i][j+1], rhs[i][j+2], rhs[i][j+3]
             vec_rhs = _mm_loadu_ps(rhs[i] + j);
             // loads f[i][j], f[i][j+1], f[i][j+2], f[i][j+3]
@@ -475,16 +434,6 @@ void computeRhs(float **f, float **g, float **rhs, char **flag, int imax,
             // correct values for p
             result = _mm_or_ps(_mm_and_ps(mask, _mm_div_ps(five, vec_del_t)), _mm_andnot_ps(mask, vec_rhs));
             _mm_storeu_ps(rhs[i]+j, result);
-        }
-        //catch the rest
-        for (; j<=jmax; j++) {
-            if (flag[i][j] & C_F) {
-                /* only for fluid and non-surface cells */
-                rhs[i][j] = (
-                             (f[i][j]-f[i-1][j])/delx +
-                             (g[i][j]-g[i][j-1])/dely
-                            ) / del_t;
-            }
         }
     }
 }
@@ -564,7 +513,7 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                 if (((i % 2 == 1) && (rb == 0)) || ((i % 2 == 0) && (rb == 1))) { j = 1; }
                 // if i is odd and rb = 1 or i is even and rb = 0, all even j's
                 else { j = 2; }
-                for (; j+8 <= jmax-1; j+=8) {
+                for (; j <= jmax; j+=8) {
 
                     // (flag[i][j] & C_F)
                     mask = _mm_setr_ps((flag[i][j] & C_F),
@@ -653,20 +602,6 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
                     p[i][j+6] = temp_store[3];
 
                 } /* end of j */
-
-                //need to catch the rest
-                for (; j<=jmax; j+=2) {
-                    if (flag[i][j] & C_F) {
-                        /* modified star near boundary */
-                        beta_mod = -omega/((eps_E+eps_W)*rdx2+(eps_N+eps_S)*rdy2);
-                        p[i][j] = (1.-omega)*p[i][j] -
-                            beta_mod*(
-                                  (eps_E*p[i+1][j]+eps_W*p[i-1][j])*rdx2
-                                + (eps_N*p[i][j+1]+eps_S*p[i][j-1])*rdy2
-                                - rhs[i][j]
-                            );
-                    }
-                }
             } /* end of i */
           /* end of parallel section */
         } /* end of rb */
@@ -825,7 +760,7 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
     #pragma omp parallel for private(j, one, two, vec_u, vec_v, vec_f, vec_g, ap, bp, cp)
     for (i=1; i<=imax; i++) {
         __m128 result;
-        for (j=1; j+4<=jmax-1; j+=4) {
+        for (j=1; j<=jmax; j+=4) {
             // loads u[i][j], u[i][j+1], u[i][j+2], u[i][j+3]
             vec_u = _mm_loadu_ps(u[i] + j);
             // loads v[i][j], v[i][j+1], v[i][j+2], v[i][j+3]
@@ -875,17 +810,6 @@ void updateVelocity(float **u, float **v, float **f, float **g, float **p,
             // result for u
             result = _mm_or_ps(_mm_and_ps(mask, _mm_sub_ps(vec_g, two)), _mm_andnot_ps(mask, vec_v));
             _mm_storeu_ps(v[i]+j, result);
-        }
-        //catch the rest
-        for(; j<=jmax; j++) {
-            /* only if both adjacent cells are fluid cells */
-            if ((i != imax) && (flag[i][j] & C_F) && (flag[i+1][j] & C_F)) {
-                u[i][j] = f[i][j]-(p[i+1][j]-p[i][j])*del_t/delx;
-            }
-            /* only if both adjacent cells are fluid cells */
-            if ((j != jmax) && (flag[i][j] & C_F) && (flag[i][j+1] & C_F)) {
-                v[i][j] = g[i][j]-(p[i][j+1]-p[i][j])*del_t/dely;
-            }
         }
     }
 }
