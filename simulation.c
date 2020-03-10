@@ -55,12 +55,6 @@ void computeTentativeVelocity(float **u, float **v, float **f, float **g,
 {
     int  i=0;
     int j=0;
-    float du2dx = 0.0;
-    float duvdx = 0.0;
-    float laplu = 0.0;
-    float dv2dy = 0.0;
-    float duvdy = 0.0;
-    float laplv = 0.0;
 
     /* unrolled edges from loop to allow vectors to access previous indexes in array
        (no u[-1][j] conditions, for example) */
@@ -445,9 +439,6 @@ int poissonSolver(float **p, float **rhs, char **flag, int imax, int jmax,
     float *res, int ifull)
 {
     int i, j, iter;
-    // float add;
-    float beta_mod;
-    // float p0 = 0.0;
     int rb; /* Red-black value. */
 
     float rdx2 = 1.0/(delx*delx);
@@ -855,7 +846,7 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
                         u[i][j]   = -u[i][j-1];
                         break;
                     case B_W:
-                        v[i][j]   = -v[i-1][j]; 
+                        v[i][j]   = -v[i-1][j];
                         break;
                     case B_NE:
                         break;
