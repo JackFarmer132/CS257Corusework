@@ -855,7 +855,7 @@ void applyBoundaryConditions(float **u, float **v, char **flag,
                         u[i][j]   = -u[i][j-1];
                         break;
                     case B_W:
-                        v[i][j]   = -v[i-1][j];
+                        v[i][j]   = -v[i-1][j]; 
                         break;
                     case B_NE:
                         break;
